@@ -1,0 +1,536 @@
+   康慧凯  湖南郴州  00后
+预科
+ULE 基础/网络
+SHELL
+MYSQL
+
+项目  project  10-11
+高级  ula   25
+   集群
+   虚拟化
+   存储
+   安全
+   云计算
+
+------------------------------------------------
+PXE DCHP/DNS/Router/...
+    172.25.254.254
+gw  172.25.0.254
+    172.25.1.254
+
+
+
+
+f0 ---> foundation0.ilt.example.com
+  vnc服务器（ftp文件服务器 笔记下载） 172.25.254.250
+
+
+f1 --->  foundation1.ilt.example.com (172.25.1.0/24)
+
+X学员编号  f2-?
+
+f2
+IP      172.25.254.2
+netmask 255.255.255.0
+gw      172.25.254.254
+DNS     172.25.254.254
+-------------------------
+   独立网段  172.25.2.0/24  ----gw 172.25.2.254 
+
+                   
+172.25.2.10 ---->  172.25.1.10
+  gw:172.25.2.254    gw 172.25.1.254
+
+
+--------------------------
+gw:192.168.0.254
+
+  (11-249)   192.168.0.102   f0:103   f10:110
+
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+虚拟机操作命令
+
+[kiosk@foundation0 ~]$ cat /etc/rht
+RHT_VENUE=ilt
+RHT_ENROLLMENT=0  --编号
+RHT_ROLE=foundation 
+RHT_COURSE=up200 --课程
+RHT_TITLE="UPLOOKING LINUX ITEM" ----名称
+RHT_VMS="install rhel6 workstation sharestorage servera serverb serverc serverd servere serverf serverg serverh serveri serverj " ---虚拟机名称
+RHT_MAXSTATIONS=50  
+RHT_VM0="classroom" ----172.25.254.254
+RHT_HVMS=""
+RHT_VMTREE=rhel7.1/x86_64  ---虚拟机的系统
+
+
+
+[kiosk@foundation0 ~]$ /usr/local/bin/rht-vmctl 
+Error: missing subcommand or VMNAME.
+
+This utility manages the Red Hat Training supplied VMs on the local
+hypervisor.
+
+Usage: rht-vmctl [-q|--quiet] VMCMD VMNAME [DATETIME]
+       rht-vmctl -h|--help
+
+  where VMCMD is one of:
+    view       - launches console viewer of VMNAME   ---图形化
+    start      - obtain and start up VMNAME  --启动
+    stop       - stop a running VMNAME --关闭
+    poweroff   - if running, force stop VMNAME  --关电源
+    reset      - poweroff, return to saved or original state, start VMNAME  --->重新恢复初始化快照
+    save       - stop, save image, start VMNAME (to DATETIME)  --保存
+    restore    - poweroff, restore to save (to DATETIME), start VMNAME  --> 恢复快照
+    listsaves  - list the saves of VMNAME 
+    status     - display libvirt status of VMNAME  --运行状态
+    get        - if not here, obtain VMNAME from server   下载
+    remove     - remove VMNAME from system  删除
+    fullreset  - poweroff, reobtain from server, start VMNAME (bad save/image)  --重新下载
+-------------------------------------------------------------------------------------------
+
+ [kiosk@foundation0 ~]$ rht-vmctl  start servera
+ [kiosk@foundation0 ~]$ ssh root@172.25.X.10    ---> ssh root@servera5
+ ----------
+servera
+serverg
+install
+ ---------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------
+ DevOps  开发运维
+
+ 自动化运维体系介绍
+
+1. 系统预备
+  i. 自动化安装操作系统及常用软件包
+PXE 无人值守安装
+ Kickstart(xxx.cfg)
+ Cobbler 补鞋匠
+
+2. 配置管理
+   i. 自动化部署业务系统软件包并完成配置
+   ii. 远程管理服务器(开关服务等)
+   iii. 变更回滚
+
+Chef
+Puppet  
+-----ruby------
+
+ansiable 
+saltstack
+-----python-------
+
+ 
+
+3. 监控报警
+   i. 服务器可用性、性能、安全监控
+   ii. 向管理员发送报警信息
+
+Cacti 监视（web界面） 可视化 
+Nagios  配置文件管理  报警及时
+监控方案: cacti+nagios 
+
+Zabbix 监视（web界面） 可视化 , 报警及时
+
+---------------------------------------------------------------------------
+ www.jd.com  618
+
+  1000w并发数
+-----------------------
+
+ 2000w    node (处理10w)  ----增加 100
+
+   zabbix ------ 性能 伐值 1000w ----- 增加主机节点 ----- openstack（kvm ） ----- saltstack ----apache服务---shell脚本添加到集群
+              ---------------------自动化完成--------------------
+
+
+ 
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# 网络无人值守安装#
+
+[TOC]
+
+
+
+## 网络无人值守安装的作用
+
+常见的Linux安装方式有光盘安装和U盘安装两种，如果我们有几十台甚至上百台服务器需要统一部署上架，不论是光盘安装还是U盘安装，在生产环境中都需要一台一台的逐个安装，即使你有足够多的光驱并刻录足够多的光盘，你也会发现这是一个既耗时又耗力的苦差事。因此，我们就希望于使用一种可以批量化部署的方案，以此解决减少部署时间和部署负责度的问题。这种方法就是网络无人值守安装方案。
+
+网络无人值守安装就是通过网络启动时推送启动或安装选项，通过匹配被安装服务器的网卡MAC地址段确认安装源和安装方式的一种技术集合，它不是一种技术而是多种技术组合完成的。
+
+## 网络无人值守安装的流程简介
+
+1）DHCP：用以分配ip地址
+
+2）预启动施行环境（PXE）：通过网卡引导计算机
+
+3）PXELINUX：提供引导文件及内核等文件
+
+4）kickstart文件：提供安装介质
+
+
+
+第一步:
+注意：所有节点关闭selinux与清空防火墙规则
+[root@servera ~]# echo "/usr/sbin/setenforce 0" >>  /etc/rc.local 
+[root@servera ~]# echo "/usr/sbin/iptables -F" >> /etc/rc.local 
+[root@servera ~]# chmod +x /etc/rc.d/rc.local
+[root@servera ~]# source  /etc/rc.local 
+
+
+
+ 构造一个局域网
+ servera 当成路由器  
+
+     --->eth1 192.168.0.10   ---->  serverg<PXE> eth1 192.168.0.16 (gw)
+
+第三步： 设置pxe的网络地址
+[kiosk@foundation0 ~]$ ssh root@servera0
+
+[root@servera ~]# ssh root@192.168.0.16
+root@192.168.0.16's password: 
+[root@serverg ~]# sed -i 's/ONBOOT.*/ONBOOT=no/' /etc/sysconfig/network-scripts/ifcfg-eth0 
+
+
+[root@serverg ~]# vim /etc/sysconfig/network-scripts/ifcfg-eth1
+DEVICE=eth1
+BOOTPROTO=static
+ONBOOT=yes
+TYPE=Ethernet
+USERCTL=yes
+IPV6INIT=no
+IPADDR=192.168.0.16
+NETMASK=255.255.255.0
+GATEWAY=192.168.0.10
+
+[root@serverg ~]# service network restart
+
+[root@serverg ~]# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         192.168.0.10    0.0.0.0         UG    0      0        0 eth1
+
+
+
+[root@serverg ~]# mount -t nfs 172.25.254.250:/content /mnt/
+
+
+
+
+
+
+
+第三步:
+设置servera 开启路由功能
+
+[root@servera ~]# echo "/bin/echo 1 > /proc/sys/net/ipv4/ip_forward" >> /etc/rc.local 
+
+[root@servera ~]# vim /etc/sysctl.conf 
+net.ipv4.ip_forward = 1
+[root@servera ~]# sysctl -p
+net.ipv4.ip_forward = 1
+
+
+
+设置SNAT
+[root@servera ~]# iptables -t nat -A POSTROUTING -s 192.168.0.0/24 -j SNAT --to-source 172.25.0.10
+
+
+
+
+
+ 第四步:  搭建PXE 
+
+
+ 1)  安装DHCP服务
+[root@serverg ~]# hostnamectl set-hostname pxe
+[root@pxe ~]# yum -y install dhcp
+[root@pxe ~]# cp /usr/share/doc/dhcp-4.2.5/dhcpd.conf.example /etc/dhcp/dhcpd.conf 
+cp: overwrite ‘/etc/dhcp/dhcpd.conf’? y
+
+
+
+[root@pxe ~]# cat /etc/dhcp/dhcpd.conf 
+allow booting;
+allow bootp;
+
+option domain-name "pod0.example.com";
+option domain-name-servers 172.25.254.254;
+default-lease-time 600;
+max-lease-time 7200;
+log-facility local7;
+
+subnet 192.168.0.0 netmask 255.255.255.0 {
+  range 192.168.0.50 192.168.0.60;
+  option domain-name-servers 172.25.254.254;
+  option domain-name "pod0.example.com";
+  option routers 192.168.0.10;
+  option broadcast-address 192.168.0.255;
+  default-lease-time 600;
+  max-lease-time 7200;
+  next-server 192.168.0.16;
+  filename "pxelinux.0";
+}
+
+class "foo" {
+  match if substring (option vendor-class-identifier, 0, 4) = "SUNW";
+}
+
+shared-network 224-29 {
+  subnet 10.17.224.0 netmask 255.255.255.0 {
+    option routers rtr-224.example.org;
+  }
+  subnet 10.0.29.0 netmask 255.255.255.0 {
+    option routers rtr-29.example.org;
+  }
+  pool {
+    allow members of "foo";
+    range 10.17.224.10 10.17.224.250;
+  }
+  pool {
+    deny members of "foo";
+    range 10.0.29.10 10.0.29.230;
+  }
+
+
+[root@pxe ~]# systemctl restart dhcpd
+
+
+
+ 2) 配置tftp服务
+
+
+[root@pxe ~]# yum -y install xinetd tftp-server
+
+[root@pxe ~]# vim /etc/xinetd.d/tftp 
+        disable                 = no
+[root@pxe ~]# service xinetd start
+[root@pxe ~]# chkconfig xinetd on
+
+
+  <1> 下载syslinux包
+[root@pxe ~]# yum -y install syslinux
+[root@pxe ~]# cp /usr/share/syslinux/pxelinux.0 /var/lib/tftpboot/
+
+
+ <2> pxelinux.cfg/default
+[root@pxe ~]# mkdir /var/lib/tftpboot/pxelinux.cfg
+[root@pxe ~]# cd /var/lib/tftpboot/pxelinux.cfg/
+[root@pxe pxelinux.cfg]# touch default
+
+ <3> 定义default菜单文件
+
+[root@pxe pxelinux.cfg]# vim /var/lib/tftpboot/pxelinux.cfg/default 
+
+
+default vesamenu.c32 # 提供图形界面
+timeout 60 # 超时时间
+display boot.msg # 介绍信息
+menu background splash.jpg # 背景图片
+menu title Welcome to Global Learning Services Setup! 　# 大标题
+
+label local  # 标签
+        menu label Boot from ^local drive #　标题
+        menu default　# 指定超时时间里没选标题，默认从那个标题进入
+        localhost 0xffff # 本地启动位置
+
+label install
+        menu label Install rhel7
+        kernel vmlinuz　# 内核所在位置
+        append initrd=initrd.img ks=http://192.168.0.16/myks.cfg # 指定initrd文件及后续kickstart>文件所在位置
+
+
+ <4> 定义启动的相关文件
+ 提供iso到本地，并挂载
+[root@pxe pxelinux.cfg]# mount -o  loop /mnt/rhel7.1/x86_64/isos/rhel-server-7.1-x86_64-dvd.iso  /media/
+
+[root@pxe isolinux]# cp vesamenu.c32 boot.msg vmlinuz initrd.img /var/lib/tftpboot/
+
+
+
+ 3) 通过kickstart工具生成ks文件
+[root@foundation0 ~]# rht-vmctl start workstation
+[root@foundation0 ~]# ssh root@workstation0
+[root@workstation ~]# yum -y install system-config-kickstart
+
+
+[root@pxe ~]# vim ks.cfg
+#version=RHEL7
+# System authorization information
+auth --enableshadow --passalgo=sha512
+# Reboot after installation 
+reboot # 装完系统之后是否重启
+# Use network installation
+url --url="http://192.168.0.16/dvd/"  # 网络安装介质所在位置
+# Use graphical install
+#graphical 
+text # 采用字符界面安装
+# Firewall configuration
+firewall --enabled --service=ssh  # 防火墙的配置
+firstboot --disable 
+ignoredisk --only-use=vda
+# Keyboard layouts
+# old format: keyboard us
+# new format:
+keyboard --vckeymap=us --xlayouts='us' # 键盘的配置
+# System language 
+lang en_US.UTF-8 # 语言制式的设置
+# Network information
+network  --bootproto=dhcp # 网络设置
+network  --hostname=localhost.localdomain
+#repo --name="Server-ResilientStorage" --baseurl=http://download.eng.bos.redhat.com/rel-eng/latest-RHEL-7/compose/Server/x86_64/os//addons/ResilientStorage
+# Root password
+rootpw --iscrypted nope 
+# SELinux configuration
+selinux --disabled
+# System services
+services --disabled="kdump,rhsmcertd" --enabled="network,sshd,rsyslog,ovirt-guest-agent,chronyd"
+# System timezone
+timezone Asia/Shanghai --isUtc
+# System bootloader configuration
+bootloader --append="console=tty0 crashkernel=auto" --location=mbr --timeout=1 --boot-drive=vda 
+# 设置boot loader安装选项 --append指定内核参数 --location 设定引导记录的位置
+# Clear the Master Boot Record
+zerombr # 清空MBR
+# Partition clearing information
+clearpart --all --initlabel # 清空分区信息
+# Disk partitioning information
+part / --fstype="xfs" --ondisk=vda --size=6144 # 设置根目录的分区情况
+%post # 装完系统后执行脚本部分
+echo "redhat" | passwd --stdin root
+useradd carol
+echo "redhat" | passwd --stdin carol
+# workaround anaconda requirements
+%end
+
+%packages # 需要安装的软件包
+@core
+%end
+
+
+
+
+
+
+  4) 通过httpd服务发布ks文件
+[root@pxe ~]# yum -y install httpd
+
+[root@pxe ~]# cp ks.cfg /var/www/html/myks.cfg
+[root@pxe ~]# chown apache. /var/www/html/myks.cfg 
+[root@pxe ~]# ll -d /var/www/html/myks.cfg 
+-rw-r--r--. 1 apache apache 1524 Jul 28 03:56 /var/www/html/myks.cfg
+
+
+
+ 5) 发布iso ---> http://192.168.0.16/dvd/
+
+[root@pxe ~]# mkdir /var/www/html/dvd
+
+[root@pxe ~]# echo "/mnt/rhel7.1/x86_64/isos/rhel-server-7.1-x86_64-dvd.iso /var/www/html/dvd/ iso9660 loop,ro 0 0" >> /etc/fstab 
+[root@pxe ~]# mount -a
+[root@pxe ~]# setenforce 0
+
+
+
+
+测试 启动install 虚拟机
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

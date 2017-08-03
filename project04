@@ -1,0 +1,440 @@
+ldap配置手册
+
+
+1) 安装软件
+[root@servera ~]# iptables -F
+[root@servera ~]# setenforce 0
+[root@servera ~]# yum install openldap-clients migrationtools openldap-servers openldap -y
+
+
+
+2）配置启动openldap
+
+[root@servera ~]# slappasswd   --密码(config)
+New password:
+Re-enter new password:
+{SSHA}IeopqaxvZY1/I7HavmzRQ8zEp4vwNjmF
+
+3）生成配置文件slapd.conf
+产生旧式的配置文件，并做格式转换
+
+[root@servera ~]# vi /etc/openldap/slapd.conf
+include         /etc/openldap/schema/corba.schema
+include         /etc/openldap/schema/core.schema
+include         /etc/openldap/schema/cosine.schema
+include         /etc/openldap/schema/duaconf.schema
+include         /etc/openldap/schema/dyngroup.schema
+include         /etc/openldap/schema/inetorgperson.schema
+include         /etc/openldap/schema/java.schema
+include         /etc/openldap/schema/misc.schema
+include         /etc/openldap/schema/nis.schema
+include         /etc/openldap/schema/openldap.schema
+include         /etc/openldap/schema/pmi.schema
+include         /etc/openldap/schema/ppolicy.schema
+include         /etc/openldap/schema/collective.schema
+allow bind_v2
+pidfile         /var/run/openldap/slapd.pid
+argsfile        /var/run/openldap/slapd.args
+####  Encrypting Connections
+TLSCACertificateFile /etc/pki/tls/certs/ca.crt
+TLSCertificateFile /etc/pki/tls/certs/slapd.crt
+TLSCertificateKeyFile /etc/pki/tls/certs/slapd.key
+### Database Config###          
+database config
+rootdn "cn=admin,cn=config"
+rootpw {SSHA}IeopqaxvZY1/I7HavmzRQ8zEp4vwNjmF
+access to * by dn.exact=gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth manage by * break
+### Enable Monitoring
+database monitor
+# allow only rootdn to read the monitor
+access to * by dn.exact="cn=admin,cn=config" read by * none
+
+
+
+ ---转换格式与修改权限
+[root@servera ~]# rm -rf /etc/openldap/slapd.d/*
+[root@servera ~]# slaptest -f /etc/openldap/slapd.conf -F /etc/openldap/slapd.d
+config file testing succeeded
+[root@servera ~]# chown -R ldap:ldap /etc/openldap/slapd.d
+[root@servera ~]# chmod -R 000 /etc/openldap/slapd.d
+[root@servera ~]# chmod -R u+rwX /etc/openldap/slapd.d
+
+
+
+5）生成密钥对 ( CA证书 ldap的密钥对)
+> TLSCACertificateFile /etc/pki/tls/certs/ca.crt
+> TLSCertificateFile /etc/pki/tls/certs/slapd.crt
+> TLSCertificateKeyFile /etc/pki/tls/certs/slapd.key
+
+
+--下载脚本自动生成
+wget ftp://172.25.254.250/notes/project/UP200/UP200_ldap-master/openldap/other/mkcert.sh
+
+
+
+
+[root@servera ~]# chmod +x mkcert.sh
+[root@servera ~]# ./mkcert.sh --create-ca-keys  --CA证书
+create the keys: my-ca.key,my-ca.crt
+the keys will save in : /etc/pki/CA/ and /etc/pki/CA/private/
+create finished , please check.
+
+
+
+[root@servera ~]# ./mkcert.sh --create-ldap-keys  --ldap的密钥对
+create the keys: ldap_server.key,ldap_server.crt
+the keys will save in : /etc/pki/CA/
+create finished , please check.
+
+
+[root@servera ~]# cd /etc/pki/CA/
+[root@servera CA]# cp my-ca.crt /etc/pki/tls/certs/ca.crt
+[root@servera CA]# cp ldap_server.key /etc/pki/tls/certs/slapd.key
+[root@servera CA]# cp ldap_server.crt  /etc/pki/tls/certs/slapd.crt
+[root@servera CA]# cd ~
+
+
+6) 检查一下配置是否正确
+[root@servera ~]# cat /etc/openldap/slapd.d/cn\=config.ldif
+
+[root@servera ~]# cat /etc/openldap/slapd.d/cn\=config/olcDatabase\=\{0\}config.ldif
+
+可以看到关键性的几个参数已经生效
+------------------------------
+> olcAllows: bind_v2
+> olcTLSCACertificateFile: /etc/pki/tls/certs/ca.crt
+> olcTLSCertificateFile: /etc/pki/tls/certs/slapd.crt
+> olcTLSCertificateKeyFile: /etc/pki/tls/certs/slapd.key
+>
+>  dn: olcDatabase={0}config
+>  olcDatabase: {0}config
+>  olcAccess: {0}to *  by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=externa 
+     l,cn=auth" manage  by * +0 break
+>  olcRootDN: cn=admin,cn=config
+>  olcRootPW:: e1NTSEF9SWVvcHFheHZaWTEvSTdIYXZtelJROHpFcDR2d05qbUY=
+--------------------------------
+
+
+7) 生成数据库目录及DB_CONFIG文件
+[root@servera ~]# rm -rf /var/lib/ldap/*
+[root@servera ~]# chown ldap.ldap /var/lib/ldap
+[root@servera ~]# cp -p /usr/share/openldap-servers/DB_CONFIG.example /var/lib/ldap/DB_CONFIG
+[root@servera ~]# chown ldap. /var/lib/ldap/DB_CONFIG
+[root@servera ~]# systemctl start  slapd.service
+
+
+
+
+8)  创建用户数据库
+
+[root@servera ~]# mkdir ~/ldif
+[root@servera ~]# vi ~/ldif/bdb.ldif
+dn: olcDatabase=bdb,cn=config
+objectClass: olcDatabaseConfig
+objectClass: olcBdbConfig
+olcDatabase: {1}bdb
+olcSuffix: dc=example,dc=org
+olcDbDirectory: /var/lib/ldap
+olcRootDN: cn=Manager,dc=example,dc=org
+olcRootPW: redhat
+olcLimits: dn.exact="cn=Manager,dc=example,dc=org" time.soft=unlimited time.hard=unlimited size.soft=unlimited size.hard=unlimited
+olcDbIndex: uid pres,eq
+olcDbIndex: cn,sn,displayName pres,eq,approx,sub
+olcDbIndex: uidNumber,gidNumber eq
+olcDbIndex: memberUid eq
+olcDbIndex: objectClass eq
+olcDbIndex: entryUUID pres,eq
+olcDbIndex: entryCSN pres,eq
+olcAccess: to attrs=userPassword by self write by anonymous auth by dn.children="ou=admins,dc=example,dc=org" write  by * none
+olcAccess: to * by self write by dn.children="ou=admins,dc=example,dc=org" write by * read
+
+ -D  用户名
+ -w  密码
+[root@servera migrationtools]#  ldapsearch -x -b "cn=config" -D "cn=admin,cn=config" -w redhat -h localhost dn -LLL | grep -v ^$
+
+
+--导入dn: olcDatabase={2}bdb,cn=config 数据库
+
+[root@servera ~]# ldapadd -x -D "cn=admin,cn=config" -w config -f ~/ldif/bdb.ldif -h localhost
+adding new entry "olcDatabase=bdb,cn=config"
+
+
+
+[root@servera migrationtools]# ldapsearch -x -b "cn=config" -D "cn=admin,cn=config" -w config -h localhost dn -LLL | grep -v ^$ |tail -1
+dn: olcDatabase={2}bdb,cn=config
+
+
+9) 添加用户条目过程中，本身条目格式定义比较麻烦，所以我通过ldap转换脚本来实现将系统用户转换成ldap用户。
+
+[root@servera ~]# cd /usr/share/migrationtools/
+[root@servera migrationtools]# vim migrate_common.ph 
+
+# Default DNS domain
+$DEFAULT_MAIL_DOMAIN = "example.org";
+# Default base
+$DEFAULT_BASE = "dc=example,dc=org";
+
+
+ 新建用户与组（指定加目录）
+[root@servera ~]# mkdir /ldapuser
+
+[root@servera ~]# groupadd -g 10000 ldapuser1
+[root@servera ~]# useradd -u 10000 -g 10000 ldapuser1 -d /ldapuser/ldapuser1
+
+[root@servera ~]# groupadd -g 10001 ldapuser2
+[root@servera ~]# useradd -u 10001 -g 10001 ldapuser2 -d /ldapuser/ldapuser2
+[root@servera ~]# echo uplooking | passwd --stdin ldapuser1
+[root@servera ~]# echo uplooking | passwd --stdin ldapuser2
+
+
+[root@servera migrationtools]# grep ^ldapuser /etc/passwd > /root/passwd.out
+[root@servera migrationtools]# grep ^ldapuser /etc/group > /root/group.out
+
+[root@servera migrationtools]# cd /usr/share/migrationtools/
+[root@servera migrationtools]# ./migrate_base.pl > /root/ldif/base.ldif
+[root@servera migrationtools]# ./migrate_passwd.pl /root/passwd.out  > /root/ldif/password.ldif
+[root@servera migrationtools]# ./migrate_group.pl /root/group.out > /root/ldif/group.ldif
+
+
+通过ldap的转换脚本，已经将所有系统中的用户转换成了ldap语法格式，总共有3个ldap文件
+
+> ~/ldif/base.ldif
+> ~/ldif/passwd.ldif
+> ~/ldif/group.ldif
+
+
+10) 将用户条目添加到ldap数据库中
+*重要：ldif文件的格式要求非常，非常的严格，一定要注意空白行不能少了。*
+
+[root@servera ~]# ldapadd -x -D "cn=Manager,dc=example,dc=org" -w redhat -h localhost -f ~/ldif/base.ldif 
+
+[root@servera ~]# ldapadd -x -D "cn=Manager,dc=example,dc=org" -w redhat -h localhost -f ~/ldif/group.ldif 
+
+[root@servera ~]# ldapadd -x -D "cn=Manager,dc=example,dc=org" -w redhat -h localhost -f ~/ldif/password.ldif 
+
+
+
+11) 通过http方式共享出ca.crt文件,通过nfs方式共享出用户家目录
+
+[root@servera ~]# yum -y install httpd
+[root@servera ~]# cp /etc/pki/tls/certs/ca.crt /var/www/html/
+[root@servera ~]# systemctl start httpd
+[root@servera ~]# systemctl enable httpd
+
+
+[root@servera ~]# yum -y install nfs-utils
+[root@servera ~]# vim /etc/exports
+/ldapuser       172.25.1.0/24(rw,async)
+[root@servera ~]# systemctl restart rpcbind
+[root@servera ~]# systemctl restart nfs
+
+
+-------------------------------------------------------------------------------
+
+
+配置serverb使用ldap认证
+[root@foundation1 ~]# rht-vmctl start serverb
+[root@foundation1 ~]# ssh root@serverb1
+[root@serverb ~]# setenforce 0
+[root@serverb ~]# iptables -F
+
+[root@serverb ~]#  yum install openldap openldap-clients nss-pam-ldapd -y
+
+
+通过证书连接ldap服务器
+servera.pod1.example.com 解析地址 172.25.1.10
+
+[root@serverb ~]# authconfig --enableldap --enableldapauth --ldapserver=servera.pod1.example.com --ldapbasedn="dc=example,dc=org" --enableldaptls --ldaploadcacert=http://servera.pod1.example.com/ca.crt  --update
+
+获取帐号：
+[root@serverb ~]# id ldapuser1
+uid=10000(ldapuser1) gid=10000(ldapuser1) groups=10000(ldapuser1)
+
+
+目前只能通过验证，如果真使用ldapuser1用户登录，会发现在serverb上并没有用户家目录，所以需要将servera的ldapuser1...用户安目录挂接到serverb。挂接方式有2种，一种是写/etc/fstab文件的开机过程中自动挂接，另一种是使用autofs。推荐使用autofs。
+
+
+[root@serverb ~]# yum -y install autofs
+
+autofs:
+172.25.1.10:/ldapuser/ldapuser1  /ldapuser/ldapuser1
+
+
+
+[root@serverb ~]# vim /etc/auto.master
+/ldapuser /etc/auto.ldap
+
+
+[root@serverb ~]# vim /etc/auto.ldap 
+*       -rw,soft,intr 172.25.1.10:/ldapuser/&
+
+[root@serverb ~]# service autofs start
+
+
+[root@serverb ~]# su - ldapuser1
+[root@serverb ~]# su - ldapuser2
+
+测试1 本地登录: login：
+
+
+测试2  serverb安装启动vsftpd
+[root@serverb ~]# yum install vsftpd -y
+[root@serverb ~]# systemctl start vsftpd
+
+
+测试3 搭建http基于帐号认证
+1)
+[root@serverb ~]# yum -y install httpd
+[root@serverb ~]#  yum install wget -y
+
+2) 安装apache 连接ldap的模块 mod_ldap.so
+
+[root@serverb ~]# wget -r ftp://172.25.254.250/notes/project/UP200/UP200_ldap-master/openldap/pkg/
+[root@serverb ~]# cd 172.25.254.250/notes/project/UP200/UP200_ldap-master/openldap/pkg/
+[root@serverb pkg]# rpm -ivh apr-util-ldap-1.5.2-6.el7.x86_64.rpm mod_ldap-2.4.6-31.el7.x86_64.rpm 
+
+3) 下载ca证书
+[root@serverb pkg]#  wget http://servera.pod1.example.com/ca.crt -O /etc/httpd/ca.crt
+
+[root@serverb ~]#  vi /etc/httpd/conf.d/www.ldapuser.com.conf
+LDAPTrustedGlobalCert CA_BASE64 /etc/httpd/ca.crt
+<VirtualHost *:80>
+        ServerName www.ldapuser.com
+        DocumentRoot /var/www/ldapuser.com
+        <Directory "/var/www/ldapuser.com">
+                AuthName ldap
+                AuthType basic
+                AuthBasicProvider ldap
+                AuthLDAPUrl "ldap://servera.pod1.example.com/dc=example,dc=org" TLS
+                Require valid-user
+        </Directory>
+</VirtualHost>
+
+
+
+[root@serverb ~]# service httpd restart
+[root@serverb ~]# mkdir -p /var/www/ldapuser.com
+[root@serverb ~]#  echo "welcome to ldapserver from serverb1" > /var/www/ldapuser.com/index.html
+
+-------------------------------------------------------------------------------------
+
+
+
+ssh服务登录:
+[root@foundation1 ~]# ssh ldapuser1@172.25.1.11
+
+vsftpd服务登录
+[root@foundation1 ~]# ftp 172.25.1.11
+Connected to 172.25.1.11 (172.25.1.11).
+220 (vsFTPd 3.0.2)
+Name (172.25.1.11:root): ldapuser2
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system type is UNIX.
+Using binary mode to transfer files.
+
+
+web服务器登录
+[root@foundation0 ~]# echo "172.25.1.11 www.ldapuser.com" >> /etc/hosts 
+
+
+firefox http://www.ldapuser.com  
+
+--------------------------------------------------------------------
+
+
+
+
+用户管理:
+
+
+批量导入账号
+删除账号信息
+使用脚本自动添加用户
+
+
+
+
+
+[root@servera ~]# for i in {01..10}
+> do
+> groupadd -g 200$i upl$i
+> useradd -u 200$i -g 200$i -d /ldapuser/upl$i upl$i
+> echo 123456 | passwd --stdin upl$i
+> done
+
+
+[root@servera ~]# grep ^upl /etc/passwd > /tmp/username.txt
+[root@servera ~]# grep ^upl /etc/group > /tmp/group.txt
+
+[root@servera migrationtools]# ./migrate_passwd.pl /tmp/username.txt > /tmp/user.ldif
+[root@servera migrationtools]# ./migrate_group.pl /tmp/group.txt > /tmp/group.ldif
+
+
+[root@servera migrationtools]# ldapadd -x -D "cn=Manager,dc=example,dc=org" -w redhat -h localhost -f /tmp/user.ldif 
+[root@servera migrationtools]# ldapadd -x -D "cn=Manager,dc=example,dc=org" -w redhat -h localhost -f /tmp/group.ldif 
+
+
+
+[root@serverb ~]# ldapsearch -x 'uid=ldapuser2' -LLL
+dn: uid=ldapuser2,ou=People,dc=example,dc=org
+uid: ldapuser2
+cn: ldapuser2
+objectClass: account
+objectClass: posixAccount
+objectClass: top
+objectClass: shadowAccount
+shadowLastChange: 17380
+shadowMin: 0
+shadowMax: 99999
+shadowWarning: 7
+loginShell: /bin/bash
+uidNumber: 10001
+gidNumber: 10001
+homeDirectory: /ldapuser/ldapuser2
+
+
+
+
+
+
+--删除
+[root@servera migrationtools]# ldapdelete -x -D "cn=Manager,dc=example,dc=org" -w redhat "uid=ldapuser2,ou=People,dc=example,dc=org"
+
+
+[root@servera ~]# vim ldap_auth_user.sh
+
+#!/bin/bash
+user_list=/ldap_user.txt
+group_list=/ldap_group.txt
+user_ldif=/ldap_user.ldif
+group_ldif=/ldap_group.ldif
+mig_user=/usr/share/migrationtools/migrate_passwd.pl
+mig_group=/usr/share/migrationtools/migrate_group.pl
+rootdn="cn=admin,dc=example,dc=org"
+rootpw=redhat
+
+
+for user in $(cat newuser.txt)
+#while :
+do
+ 
+        #read -p "请输入要创建的LDAP User[输入q推测出]:" user
+        #if [ "$user" = "q" ] ;then
+        #   exit
+        #fi
+        
+        useradd $user -d /ldapuser/$user &>/dev/null
+        echo "123456" | passwd --stdin $user &> /dev/null 
+        egrep "\<$user\>" /etc/passwd > $user_list
+        egrep "\<$user\>" /etc/group >  $group_list
+        $mig_user $user_list > $user_ldif
+        $mig_group $group_list > $group_ldif
+        ldapadd -x -D $rootdn -w $rootpw -c -f $user_ldif &> /dev/null && u1=1 || u1=0
+        ldapadd -x -D $rootdn -w $rootpw -c -f $group_ldif &> /dev/null && u2=1 || u2=0
+        if [ "$u1" = 1 -a "$u2" = 1 ] ;then
+                echo "添加用户$user成功!"
+        fi
+done
+
